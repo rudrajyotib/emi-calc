@@ -4,6 +4,7 @@ import { AddDisbursement } from "./functional/AddDisbursement/AddDisbursement"
 import { AddLoanPlan } from "./functional/AddLoanPlan/AddLoanPlan"
 import { TableData } from "./ui/table/TableProps"
 import Table from "./ui/table/Table"
+import { AddRepayment } from "./functional/AddRepayment/AddRepayment"
 
 type Disbursement = {
     month: number,
@@ -14,6 +15,15 @@ type Disbursements = {
     schedule: Disbursement[]
 }
 
+type Repayment = {
+    month: number,
+    amount: number
+}
+
+type Repayments = {
+    schedule: Repayment[]
+}
+
 type EmiState = {
     numberOfMonth: number,
     totalLoan: number,
@@ -22,10 +32,11 @@ type EmiState = {
     monthlyBreakup: { principal: number, interest: number, pendingPrincipal: number }[],
     calculated: boolean,
     disbursements: Disbursements
-    paymentSchedule: MonthlySchedule[]
+    amortisationSchedule: MonthlyAmortisationSchedule[]
+    paymentSchedule: Repayments
 }
 
-type MonthlySchedule = {
+type MonthlyAmortisationSchedule = {
     outstanding: number,
     principalDeducted: number,
     interestDeducted: number
@@ -47,7 +58,8 @@ const EmiApp = () => {
         monthlyBreakup: [],
         calculated: false,
         disbursements: { schedule: [] },
-        paymentSchedule: []
+        amortisationSchedule: [],
+        paymentSchedule: {schedule:[]}
     })
 
     const addDisbursement = (month: number, amount: number) => {
@@ -68,10 +80,29 @@ const EmiApp = () => {
         })
     }
 
-    const paymentSchedule = () => {
-        const monthlyPayments: MonthlySchedule[] = []
+    const addRepayment = (month: number, amount: number) => {
+        setEmiState((current: EmiState) => {
+            const newState = { ...current }
+            const newRepayments = current.paymentSchedule.schedule.map((value) => {
+                return {
+                    month: value.month,
+                    amount: value.amount
+                }
+            })
+            newState.paymentSchedule = {
+                schedule: newRepayments
+            }
+            newState.paymentSchedule.schedule.push({ month, amount })
+            console.log(JSON.stringify(newState))
+            return newState
+        })
+    }
+
+    const amortisationSchedule = () => {
+        const monthlyAmortisation: MonthlyAmortisationSchedule[] = []
         let outstanding = emiState.totalLoan
         const disbursementsMap: Map<number, number> = new Map();
+        const repaymentsMap: Map<number, number> = new Map();
         emiState.disbursements.schedule.forEach((value: Disbursement) => {
             if (disbursementsMap.has(value.month)) {
                 let amt = disbursementsMap.get(value.month)
@@ -82,59 +113,49 @@ const EmiApp = () => {
                 disbursementsMap.set(value.month, value.amount)
             }
         })
-        if (disbursementsMap.size > 0) {
-            let firstDisburse = disbursementsMap.get(1)
-            if (firstDisburse && firstDisburse>0){
-                outstanding = firstDisburse
-                const outstandingForMonth = outstanding
-                const interestForMonth = parseInt(((outstanding * emiState.interest) / 1200).toFixed(0))
-                const principalDeducted = emiState.emi - interestForMonth
-                outstanding = outstanding - principalDeducted
-                monthlyPayments.push({
-                    outstanding: outstandingForMonth,
-                    interestDeducted: interestForMonth,
-                    principalDeducted: principalDeducted
-                })
+        emiState.paymentSchedule.schedule.forEach((value: Repayment) => {
+            if (repaymentsMap.has(value.month)) {
+                let amt = repaymentsMap.get(value.month)
+                amt = amt && amt > 0 ? amt : 0
+                repaymentsMap.set(value.month,
+                    amt + value.amount)
+            } else {
+                repaymentsMap.set(value.month, value.amount)
             }
-            for (let i = 1; i < emiState.numberOfMonth; i++) {
-                if (outstanding <= 0) {
-                    break
-                }
-                let disburseInMonth = disbursementsMap.get(i+1)
-                if (disburseInMonth && disburseInMonth > 0){
-                    outstanding = outstanding + disburseInMonth
-                }
-                const outstandingForMonth = outstanding
-                const interestForMonth = parseInt(((outstanding * emiState.interest) / 1200).toFixed(0))
-                const principalDeducted = emiState.emi - interestForMonth
-                outstanding = outstanding - principalDeducted
-                monthlyPayments.push({
-                    outstanding: outstandingForMonth,
-                    interestDeducted: interestForMonth,
-                    principalDeducted: principalDeducted
-                })
+        })
+        if (disbursementsMap.size > 0){
+            const firstDisburse = disbursementsMap.get(1)
+            if (firstDisburse && firstDisburse > 0){
+                outstanding = 0
             }
         }
-        else {
-            for (let i = 0; i < emiState.numberOfMonth; i++) {
-                if (outstanding <= 0) {
-                    break
-                }
-                const outstandingForMonth = outstanding
-                const interestForMonth = parseInt(((outstanding * emiState.interest) / 1200).toFixed(0))
-                const principalDeducted = emiState.emi - interestForMonth
-                outstanding = outstanding - principalDeducted
-                monthlyPayments.push({
-                    outstanding: outstandingForMonth,
-                    interestDeducted: interestForMonth,
-                    principalDeducted: principalDeducted
-                })
+        for (let i = 0; i < emiState.numberOfMonth; i++) {
+            if (outstanding < 0) {
+                break
+            }
+            let disburseInMonth = disbursementsMap.get(i+1)
+            if (disburseInMonth && disburseInMonth > 0){
+                outstanding = outstanding + disburseInMonth
+            }
+            const outstandingForMonth = outstanding
+            const interestForMonth = parseInt(((outstanding * emiState.interest) / 1200).toFixed(0))
+            const principalDeducted = emiState.emi - interestForMonth
+            outstanding = outstanding - principalDeducted
+            monthlyAmortisation.push({
+                outstanding: outstandingForMonth,
+                interestDeducted: interestForMonth,
+                principalDeducted: principalDeducted
+            })
+            let paymentDone = repaymentsMap.get(i+1)
+            if (paymentDone && paymentDone > 0){
+                outstanding = outstanding - paymentDone
             }
         }
+       
         setEmiState((currentState: EmiState) => {
             const newState = { ...currentState }
             newState.calculated = true
-            newState.paymentSchedule = monthlyPayments
+            newState.amortisationSchedule = monthlyAmortisation
             return newState
         })
     }
@@ -176,20 +197,39 @@ const EmiApp = () => {
         }
     </div>
 
+const showRepayments = <div style={{ display: 'flex', flexDirection: 'column', flex: 1, }}>
+{
+    emiState.paymentSchedule.schedule.map((value, index) => {
+        console.log('Iterating disbursement:', index)
+        return <AddRepayment key={`AddRepaymentOuterContainer${index}`} namePrfix={`AddRepaymentContainer${index}`}
+            amount={value.amount} month={value.month} onSave={(month, amount) => {
+                setEmiState((current: EmiState) => {
+                    const newState = { ...current }
+                    newState.paymentSchedule.schedule[index].amount = amount
+                    newState.paymentSchedule.schedule[index].month = month
+                    console.log('new state on save::', newState)
+                    return newState
+                })
+
+            }} />
+    })
+}
+</div>
+
 
     const tableData: TableData = {
-        name: 'paymentChart',
+        name: 'amortisationChart',
         cells: [{ cell: 'Month' }, { cell: 'Outstanding' }, { cell: 'Principal' }, { cell: 'Interest' }],
         body: []
     }
 
-    let paymentTable = <></>
+    let amortisationTable = <></>
 
     if (emiState.calculated === true) {
-        emiState.paymentSchedule.forEach((val: MonthlySchedule, index: number) => {
+        emiState.amortisationSchedule.forEach((val: MonthlyAmortisationSchedule, index: number) => {
             tableData.body.push([{ data: index + 1 }, { data: val.outstanding }, { data: val.principalDeducted }, { data: val.interestDeducted }])
         })
-        paymentTable = <Table body={tableData.body} name={tableData.name} cells={tableData.cells} />
+        amortisationTable = <Table body={tableData.body} name={tableData.name} cells={tableData.cells} />
     }
 
 
@@ -211,8 +251,17 @@ const EmiApp = () => {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, }}>
             <div style={{ display: 'flex', flexDirection: 'row', flex: 1 }}>
-                <Button size="large" importance="primary" name="Payment Schedule" onClick={() => {
-                    paymentSchedule()
+                <span>Add repayment schedule</span>
+                <Button size="large" importance="primary" name="Add Repayment" onClick={() => {
+                    addRepayment(0, 0)
+                }} />
+            </div>
+            {showRepayments}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, }}>
+            <div style={{ display: 'flex', flexDirection: 'row', flex: 1 }}>
+                <Button size="large" importance="primary" name="Amortisation Schedule" onClick={() => {
+                    amortisationSchedule()
                 }} />
             </div>
         </div>
@@ -226,7 +275,7 @@ const EmiApp = () => {
         </div>
         <div style={{ display: 'flex', flex: 1 }}>
             {
-                paymentTable
+                amortisationTable
             }
         </div>
     </div>)
